@@ -181,10 +181,10 @@ startButton.addEventListener('click', () => {
   navigator.xr.requestSession('immersive-vr').then((session) => {
     renderer.xr.setSession(session);
 	// Force camera position to be correct inside VR
-    const referenceSpaceType = 'local-floor'; 
+    const referenceSpaceType = 'local'; 
     session.requestReferenceSpace(referenceSpaceType).then((referenceSpace) => {
 		renderer.xr.setReferenceSpace(referenceSpace);
-        camera.position.set(0, 1.6, 0); // Ensure player starts at correct height
+        camera.position.set(0, -10.6, 0); // Ensure player starts at correct height
     });
 
     // Controller setup
@@ -223,9 +223,12 @@ function animate() {
 }
 
 // Initial setup
-camera.position.set(0, 1.6, 0); // Default height, overridden by VR
+camera.position.set(0, 0, 0); // Default height, overridden by VR
 updateScoreDisplay();
 
 // Basic lighting (optional)
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+const ambientLight = new THREE.AmbientLight(0xffffff, 1);
 scene.add(ambientLight);
+
+const aLight = new THREE.Light(0xffffff, 0.5);
+scene.add(aLight);
