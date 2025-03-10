@@ -180,9 +180,12 @@ startButton.addEventListener('click', () => {
   startScreen.style.display = 'none';
   navigator.xr.requestSession('immersive-vr').then((session) => {
     renderer.xr.setSession(session);
-	const light = new THREE.DirectionalLight(0xffffff, 1);
-	light.position.set(5, 10, 5).normalize();
-	scene.add(light);
+	// Force camera position to be correct inside VR
+    const referenceSpaceType = 'local-floor'; 
+    session.requestReferenceSpace(referenceSpaceType).then((referenceSpace) => {
+		renderer.xr.setReferenceSpace(referenceSpace);
+        camera.position.set(0, 1.6, 0); // Ensure player starts at correct height
+    });
 
     // Controller setup
     controller = renderer.xr.getController(0);
