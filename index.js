@@ -180,6 +180,9 @@ startButton.addEventListener('click', () => {
   startScreen.style.display = 'none';
   navigator.xr.requestSession('immersive-vr').then((session) => {
     renderer.xr.setSession(session);
+	const light = new THREE.DirectionalLight(0xffffff, 1);
+	light.position.set(5, 10, 5).normalize();
+	scene.add(light);
 
     // Controller setup
     controller = renderer.xr.getController(0);
