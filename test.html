@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR FPS Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: black;
+            color: white;
+        }
+        button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            font-size: 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <script type="module">
+		import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.136/build/three.module.js';
+		import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.136/examples/jsm/loaders/GLTFLoader.js';
+		import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.136/examples/jsm/webxr/XRControllerModelFactory.js';
+
+		// Scene setup
+		const scene = new THREE.Scene();
+		const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+		const renderer = new THREE.WebGLRenderer({ antialias: true });
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.xr.enabled = true;
+		document.body.appendChild(renderer.domElement);
+		document.body.style.textAlign = "center";
+
+		// Add light
+		const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+		scene.add(light);
+
+		// Load the level
+		const loader = new GLTFLoader();
+		loader.load('level.glb', function (gltf) {
+			let level = gltf.scene;
+			level.position.set(0, 0, 0);
+			scene.add(level);
+		});
+
+		// Start Screen
+		let startButton = document.createElement("button");
+		startButton.innerText = "Start VR FPS Game";
+		startButton.style.padding = "10px 20px";
+		startButton.style.fontSize = "20px";
+		document.body.appendChild(startButton);
+
+		startButton.addEventListener("click", () => {
+			document.body.removeChild(startButton);
+			document.body.appendChild(VRButton.createButton(renderer)); // Enable VR mode
+		});
+
+		// Player setup
+		const player = new THREE.Group();
+		player.position.set(0, 1.6, 0); // Spawn at eye level
+		scene.add(player);
+
+		// Load the gun
+		let gun;
+		loader.load('gun.glb', function (gltf) {
+			gun = gltf.scene;
+			gun.scale.set(0.3, 0.3, 0.3);
+			gun.position.set(0.1, -0.1, -0.3);
+			player.add(gun);
+		});
+
+		// Controller setup
+		const controller = renderer.xr.getController(0);
+		player.add(controller);
+
+		const controllerModelFactory = new XRControllerModelFactory();
+		const controllerGrip = renderer.xr.getControllerGrip(0);
+		controllerGrip.add(controllerModelFactory.createControllerModel(controllerGrip));
+		scene.add(controllerGrip);
+
+		// Enemy setup
+		let enemies = [];
+		let enemyHits = new Map();
+
+		function createEnemy(x, y, z, isMoving) {
+			let enemy = new THREE.Mesh(
+				new THREE.BoxGeometry(0.5, 1, 0.2),
+				new THREE.MeshBasicMaterial({ color: 0xff0000 })
+			);
+			enemy.position.set(x, y, z);
+			scene.add(enemy);
+			enemies.push({ obj: enemy, isMoving: isMoving, hitCount: 0 });
+			enemyHits.set(enemy, 0);
+		}
+
+		// Spawn 4 enemies
+		createEnemy(2, 1.6, -5, false); // Static enemy
+		createEnemy(-2, 1.6, -5, false); // Static enemy
+		createEnemy(3, 1.6, -8, true); // Moving enemy
+		createEnemy(-3, 1.6, -8, true); // Moving enemy
+
+		// Path movement for moving enemies
+		let pathIndex = 0;
+		const pathPoints = [[3, 1.6, -8], [3, 1.6, -6], [3, 1.6, -8]];
+		const pathSpeed = 0.02;
+
+		// Shooting mechanic
+		controller.addEventListener("selectstart", () => {
+			if (!gun) return;
+
+			let tracer = new THREE.Mesh(
+				new THREE.CylinderGeometry(0.02, 0.02, 1, 8),
+				new THREE.MeshBasicMaterial({ color: 0xffff00 })
+			);
+
+			let gunPosition = new THREE.Vector3();
+			gun.getWorldPosition(gunPosition);
+			
+			tracer.position.copy(gunPosition);
+			tracer.rotation.copy(camera.rotation);
+			scene.add(tracer);
+
+			// Move tracer forward
+			let tracerDirection = new THREE.Vector3(0, 0, -1);
+			tracerDirection.applyQuaternion(camera.quaternion);
+			
+			let interval = setInterval(() => {
+				tracer.position.add(tracerDirection.clone().multiplyScalar(0.2));
+
+				// Check for collision with enemies
+				enemies.forEach((enemy, index) => {
+					if (enemy.obj.position.distanceTo(tracer.position) < 0.5) {
+						enemy.hitCount++;
+						console.log("Enemy hit! Hits: ", enemy.hitCount);
+
+						if (enemy.hitCount >= 4) {
+							scene.remove(enemy.obj);
+							enemies.splice(index, 1);
+							console.log("Enemy destroyed!");
+						}
+						
+						scene.remove(tracer);
+						clearInterval(interval);
+					}
+				});
+
+				// Remove tracer after some time
+				if (tracer.position.length() > 10) {
+					scene.remove(tracer);
+					clearInterval(interval);
+				}
+			}, 30);
+		});
+
+		// Game loop
+		function animate() {
+			renderer.setAnimationLoop(() => {
+				// Move enemies along a path
+				enemies.forEach((enemy) => {
+					if (enemy.isMoving) {
+						let target = pathPoints[pathIndex];
+						enemy.obj.position.lerp(new THREE.Vector3(...target), pathSpeed);
+					}
+				});
+
+				renderer.render(scene, camera);
+			});
+		}
+
+		animate();
+    </script>
+</body>
+</html>
