@@ -1,14 +1,183 @@
-<html>
-  <head>
-    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  </head>
-  <body>
-    <a-scene>
-      <a-box position="-1 0.5 -3" rotation="0 45 0" color="#4CC3D9"></a-box>
-      <a-sphere position="0 1.25 -5" radius="1.25" color="#EF2D5E"></a-sphere>
-      <a-cylinder position="1 0.75 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
-      <a-plane position="0 0 -4" rotation="-90 0 0" width="4" height="4" color="#7BC8A4"></a-plane>
-      <a-sky color="#ECECEC"></a-sky>
-    </a-scene>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VR Shooter</title>
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <script>
+    // Component to shoot bullets from hands
+    AFRAME.registerComponent('shoot', {
+      init: function () {
+        this.el.addEventListener('triggerdown', () => {
+          const hand = this.el;
+          const scene = hand.sceneEl;
+          const bullet = document.createElement('a-sphere');
+          bullet.setAttribute('radius', '0.1');
+          bullet.setAttribute('color', 'yellow');
+          bullet.setAttribute('class', 'bullet');
+          const handPos = new THREE.Vector3();
+          hand.object3D.getWorldPosition(handPos);
+          bullet.setAttribute('position', handPos);
+          const direction = new THREE.Vector3();
+          hand.object3D.getWorldDirection(direction);
+          direction.negate();
+          bullet.setAttribute('velocity', {x: direction.x * 10, y: direction.y * 10, z: direction.z * 10});
+          scene.appendChild(bullet);
+        });
+      }
+    });
+
+    // Component to move entities based on velocity
+    AFRAME.registerComponent('velocity', {
+      schema: {
+        x: {type: 'number', default: 0},
+        y: {type: 'number', default: 0},
+        z: {type: 'number', default: 0}
+      },
+      tick: function (time, timeDelta) {
+        const deltaSeconds = timeDelta / 1000;
+        const position = this.el.getAttribute('position');
+        position.x += this.data.x * deltaSeconds;
+        position.y += this.data.y * deltaSeconds;
+        position.z += this.data.z * deltaSeconds;
+        this.el.setAttribute('position', position);
+        if (Math.abs(position.x) > 50 || Math.abs(position.z) > 50) {
+          this.el.parentNode.removeChild(this.el);
+        }
+      }
+    });
+
+    // Component to move enemies towards the player
+    AFRAME.registerComponent('move-towards-player', {
+      schema: {speed: {type: 'number', default: 5}},
+      tick: function (time, timeDelta) {
+        const player = document.querySelector('#camera');
+        const playerPos = player.getAttribute('position');
+        const enemyPos = this.el.getAttribute('position');
+        const direction = new THREE.Vector3(playerPos.x - enemyPos.x, 0, playerPos.z - enemyPos.z).normalize();
+        const deltaSeconds = timeDelta / 1000;
+        enemyPos.x += direction.x * this.data.speed * deltaSeconds;
+        enemyPos.z += direction.z * this.data.speed * deltaSeconds;
+        this.el.setAttribute('position', enemyPos);
+      }
+    });
+
+    // Component to move blue enemies side to side
+    AFRAME.registerComponent('move-sideways', {
+      schema: {
+        centerX: {type: 'number', default: 0},
+        range: {type: 'number', default: 2}
+      },
+      tick: function (time) {
+        const x = this.data.centerX + this.data.range * Math.sin(time / 1000);
+        const pos = this.el.getAttribute('position');
+        this.el.setAttribute('position', {x: x, y: pos.y, z: pos.z});
+      }
+    });
+
+    // Component to spawn red enemies
+    AFRAME.registerComponent('spawn-enemies', {
+      init: function () {
+        setInterval(() => {
+          const enemy = document.createElement('a-box');
+          enemy.setAttribute('width', '1');
+          enemy.setAttribute('height', '1');
+          enemy.setAttribute('depth', '1');
+          enemy.setAttribute('color', 'red');
+          enemy.setAttribute('class', 'enemy');
+          const x = (Math.random() - 0.5) * 80;
+          enemy.setAttribute('position', {x: x, y: 0.5, z: -40});
+          enemy.setAttribute('move-towards-player', '');
+          this.el.appendChild(enemy);
+        }, 2000);
+      }
+    });
+
+    // Component to detect collisions
+    AFRAME.registerComponent('collision-detector', {
+      init: function () {
+        this.bullets = [];
+        this.enemies = [];
+        this.blueEnemies = [];
+        this.barriers = [
+          {min: {x: -4, y: 0, z: -5.25}, max: {x: 0, y: 2, z: -4.75}},
+          {min: {x: 0, y: 0, z: -5.25}, max: {x: 4, y: 2, z: -4.75}}
+        ];
+        this.counter = 0;
+        this.counterEl = document.querySelector('#counter');
+      },
+      tick: function () {
+        this.bullets = document.querySelectorAll('.bullet');
+        this.enemies = document.querySelectorAll('.enemy');
+        this.blueEnemies = document.querySelectorAll('.blue-enemy');
+        this.bullets.forEach(bullet => {
+          const bulletPos = bullet.getAttribute('position');
+          this.barriers.forEach(barrier => {
+            if (
+              bulletPos.x >= barrier.min.x && bulletPos.x <= barrier.max.x &&
+              bulletPos.y >= barrier.min.y && bulletPos.y <= barrier.max.y &&
+              bulletPos.z >= barrier.min.z && bulletPos.z <= barrier.max.z
+            ) {
+              bullet.parentNode.removeChild(bullet);
+            }
+          });
+          this.enemies.forEach(enemy => {
+            const enemyPos = enemy.getAttribute('position');
+            const min = {x: enemyPos.x - 0.5, y: enemyPos.y - 0.5, z: enemyPos.z - 0.5};
+            const max = {x: enemyPos.x + 0.5, y: enemyPos.y + 0.5, z: enemyPos.z + 0.5};
+            if (
+              bulletPos.x >= min.x && bulletPos.x <= max.x &&
+              bulletPos.y >= min.y && bulletPos.y <= max.y &&
+              bulletPos.z >= min.z && bulletPos.z <= max.z
+            ) {
+              enemy.parentNode.removeChild(enemy);
+              bullet.parentNode.removeChild(bullet);
+              this.counter++;
+              this.counterEl.setAttribute('value', `Enemies Hit: ${this.counter}`);
+            }
+          });
+          this.blueEnemies.forEach(blueEnemy => {
+            const blueEnemyPos = blueEnemy.getAttribute('position');
+            const min = {x: blueEnemyPos.x - 0.5, y: blueEnemyPos.y - 0.5, z: blueEnemyPos.z - 0.5};
+            const max = {x: blueEnemyPos.x + 0.5, y: blueEnemyPos.y + 0.5, z: blueEnemyPos.z + 0.5};
+            if (
+              bulletPos.x >= min.x && bulletPos.x <= max.x &&
+              bulletPos.y >= min.y && bulletPos.y <= max.y &&
+              bulletPos.z >= min.z && bulletPos.z <= max.z
+            ) {
+              blueEnemy.parentNode.removeChild(blueEnemy);
+              bullet.parentNode.removeChild(bullet);
+              this.counter++;
+              this.counterEl.setAttribute('value', `Enemies Hit: ${this.counter}`);
+            }
+          });
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+  <a-scene spawn-enemies collision-detector>
+    <!-- Large room floor -->
+    <a-plane position="0 0 0" rotation="-90 0 0" width="100" height="100" color="#7BC8A4"></a-plane>
+
+    <!-- Player rig with camera, hands, and counter -->
+    <a-entity id="rig">
+      <a-entity id="camera" camera position="0 1.6 0" look-controls>
+        <a-text id="counter" value="Enemies Hit: 0" position="0 0.5 -1" align="center" color="red"></a-text>
+      </a-entity>
+      <a-entity id="left-hand" hand-controls="hand: left" shoot></a-entity>
+      <a-entity id="right-hand" hand-controls="hand: right" shoot></a-entity>
+    </a-entity>
+
+    <!-- Barriers -->
+    <a-box id="barrier1" position="-2 1 -5" width="4" height="2" depth="0.5" color="brown"></a-box>
+    <a-box id="barrier2" position="2 1 -5" width="4" height="2" depth="0.5" color="brown"></a-box>
+
+    <!-- Blue enemies -->
+    <a-box id="blue-enemy1" class="blue-enemy" position="-3 0.5 -6" width="1" height="1" depth="1" color="blue" move-sideways="centerX: -3; range: 2"></a-box>
+    <a-box id="blue-enemy2" class="blue-enemy" position="3 0.5 -6" width="1" height="1" depth="1" color="blue" move-sideways="centerX: 3; range: 2"></a-box>
+  </a-scene>
+</body>
 </html>
