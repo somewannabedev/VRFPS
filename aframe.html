@@ -19,9 +19,9 @@
         z: 1     // Multiplier for z-direction
       },
       rotationDegrees: {
-        x: -90,    // Rotation around x-axis in degrees
+        x: -90,    // Rotation around x-axis in degrees (set to 0 to follow controller)
         y: 0,    // Rotation around y-axis in degrees
-        z: 0    // Rotation around z-axis in degrees (example: 90 degrees)
+        z: 0     // Rotation around z-axis in degrees
       },
       velocity: {
         baseSpeed: 10 // Base speed of the bullet
@@ -67,19 +67,19 @@
             direction.z * BULLET_CONFIG.directionMultiplier.z
           );
 
-          // Apply rotations in degrees around each axis
+          // Apply rotations in degrees around each axis (if any)
           const quaternion = new THREE.Quaternion();
           quaternion.setFromEuler(
             new THREE.Euler(
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.x), // X rotation
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.y), // Y rotation
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.z), // Z rotation
-              'XYZ' // Order of rotations
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.x),
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.y),
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.z),
+              'XYZ'
             )
           );
           adjustedDirection.applyQuaternion(quaternion);
 
-          // Set velocity with rotated direction and speed
+          // Set velocity with adjusted direction and speed
           bullet.setAttribute('velocity', {
             x: adjustedDirection.x * BULLET_CONFIG.velocity.baseSpeed,
             y: adjustedDirection.y * BULLET_CONFIG.velocity.baseSpeed,
