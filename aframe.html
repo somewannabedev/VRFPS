@@ -44,7 +44,7 @@
           pos.add(offset);
 
           // Get the controller's world rotation
-          const dir = new THREE.Vector3(0, 1.2, 0); // Default forward vector (-Z in local space)
+          const dir = new THREE.Vector3(0, -0.9, 0); // Default forward vector (-Z in local space)
           const controllerRotation = new THREE.Quaternion();
           this.el.object3D.getWorldQuaternion(controllerRotation);
           
