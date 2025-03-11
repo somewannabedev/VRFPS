@@ -18,10 +18,16 @@
           bullet.setAttribute('class', 'bullet');
           const handPos = new THREE.Vector3();
           hand.object3D.getWorldPosition(handPos);
-          bullet.setAttribute('position', handPos);
           const direction = new THREE.Vector3();
           hand.object3D.getWorldDirection(direction);
           direction.negate();
+          // Offset bullet to spawn in front of the hand/controller
+          const offset = direction.clone().multiplyScalar(0.5); // Adjust 0.5 as needed
+          bullet.setAttribute('position', {
+            x: handPos.x + offset.x,
+            y: handPos.y + offset.y,
+            z: handPos.z + offset.z
+          });
           bullet.setAttribute('velocity', {x: direction.x * 10, y: direction.y * 10, z: direction.z * 10});
           scene.appendChild(bullet);
         });
@@ -168,16 +174,19 @@
         <a-text id="counter" value="Enemies Hit: 0" position="0 0.5 -1" align="center" color="red"></a-text>
       </a-entity>
       <a-entity id="left-hand" hand-controls="hand: left" shoot></a-entity>
-      <a-entity id="right-hand" hand-controls="hand: right" shoot></a-entity>
+      <a-entity id="right-hand" hand-controls="hand: right" shoot>
+        <a-entity gltf-model="url(models/gun.glb)" scale="0.1 0.1 0.1" position="0 0 0"></a-entity>
+      </a-entity>
     </a-entity>
 
     <!-- Barriers -->
-    <a-box id="barrier1" position="-2 1 -5" width="4" height="2" depth="0.5" color="brown"></a-box>
-    <a-box id="barrier2" position="2 1 -5" width="4" height="2" depth="0.5" color="brown"></a-box>
+    <a-box id="barrier1" position="-20 1 -8" width="4" height="2" depth="0.5" color="brown"></a-box>
+    <a-box id="barrier2" position="2 1 -6" width="4" height="2" depth="0.5" color="brown"></a-box>
 
     <!-- Blue enemies -->
-    <a-box id="blue-enemy1" class="blue-enemy" position="-3 0.5 -6" width="1" height="1" depth="1" color="blue" move-sideways="centerX: -3; range: 2"></a-box>
-    <a-box id="blue-enemy2" class="blue-enemy" position="3 0.5 -6" width="1" height="1" depth="1" color="blue" move-sideways="centerX: 3; range: 2"></a-box>
+    <a-box id="blue-enemy1" class="blue-enemy" position="-21 0.5 -9" width="1" height="1" depth="1" color="blue" move-sideways="centerX: -3; range: 2"></a-box>
+    <a-box id="blue-enemy2" class="blue-enemy" position="3 0.5 -7" width="1" height="1" depth="1" color="blue" move-sideways="centerX: 3; range: 2"></a-box>
   </a-scene>
 </body>
 </html>
+
