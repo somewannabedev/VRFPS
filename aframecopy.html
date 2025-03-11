@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Simple VR Shooter</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+</head>
+<body>
+    <a-scene>
+        <!-- Player rig -->
+        <a-entity id="rig">
+            <a-camera position="0 1.6 0"></a-camera>
+            
+            <!-- Right hand (Oculus Touch) -->
+            <a-entity id="right-hand"
+                oculus-touch-controls="hand: right"
+                position="0.2 1.2 -0.3"
+                shoot-controls="hand: right">
+                <a-box width="0.1" height="0.05" depth="0.2" color="gray"></a-box>
+            </a-entity>
+
+            <!-- Left hand (Oculus Touch) -->
+            <a-entity id="left-hand"
+                oculus-touch-controls="hand: left"
+                position="-0.2 1.2 -0.3"
+                shoot-controls="hand: left">
+                <a-box width="0.1" height="0.05" depth="0.2" color="gray"></a-box>
+            </a-entity>
+
+            <!-- Score display -->
+            <a-text
+                value="Hits: 0"
+                color="red"
+                position="0 2 -1"
+                align="center"
+                width="2">
+            </a-text>
+        </a-entity>
+
+        <!-- Floor -->
+        <a-plane rotation="-90 0 0" width="20" height="20" color="#7BC8A4"></a-plane>
+
+        <!-- Blue Sky -->
+        <a-sky color="#00F"></a-sky>
+    </a-scene>
+
+    <script>
+        let hits = 0;
+        const scoreText = document.querySelector('a-text');
+
+        // Shooting component
+        AFRAME.registerComponent('shoot-controls', {
+            schema: { hand: {type: 'string'} },
+            init: function() {
+                this.el.addEventListener('triggerdown', () => {
+                    const pos = this.el.getAttribute('position');
+                    const dir = this.el.object3D.getWorldDirection(new THREE.Vector3());
+					
+		            // Apply -90 degrees (or -Math.PI/2 radians) rotation on the X-axis
+					const rotationMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+					dir.applyMatrix4(rotationMatrix);
+
+                    const bullet = document.createElement('a-sphere');
+                    bullet.setAttribute('radius', '0.05');
+                    bullet.setAttribute('color', 'yellow');
+                    bullet.setAttribute('position', pos);
+                    bullet.setAttribute('bullet', {direction: dir});
+                    this.el.sceneEl.appendChild(bullet);
+                });
+            }
+        });
+
+        // Bullet component
+        AFRAME.registerComponent('bullet', {
+            schema: { direction: {type: 'vec3'} },
+            tick: function(time, delta) {
+                const pos = this.el.getAttribute('position');
+                const speed = 10;
+                pos.x += this.data.direction.x * -speed * (delta / 1000);
+                pos.y += this.data.direction.y * -speed * (delta / 1000);
+                pos.z += this.data.direction.z * -speed * (delta / 1000);
+
+                if (pos.z < -20) {
+                    this.el.remove();
+                    return;
+                }
+                this.el.setAttribute('position', pos);
+
+                // Simple collision
+                const enemies = document.querySelectorAll('[enemy]');
+                enemies.forEach(enemy => {
+                    const enemyPos = enemy.getAttribute('position');
+                    const dist = Math.sqrt(
+                        Math.pow(pos.x - enemyPos.x, 2) +
+                        Math.pow(pos.y - enemyPos.y, 2) +
+                        Math.pow(pos.z - enemyPos.z, 2)
+                    );
+                    if (dist < 0.5) {
+                        enemy.remove();
+                        this.el.remove();
+                        hits++;
+                        scoreText.setAttribute('value', `Hits: ${hits}`);
+                    }
+                });
+            }
+        });
+
+        // Enemy component
+        AFRAME.registerComponent('enemy', {
+            tick: function(time, delta) {
+                const pos = this.el.getAttribute('position');
+                pos.z += 2 * (delta / 1000);
+                if (pos.z > 0) this.el.remove();
+                this.el.setAttribute('position', pos);
+            }
+        });
+
+        // Enemy spawner (in blue sky background)
+        setInterval(() => {
+            const enemy = document.createElement('a-box');
+            enemy.setAttribute('width', '0.5');
+            enemy.setAttribute('height', '0.5');
+            enemy.setAttribute('depth', '0.5');
+            enemy.setAttribute('color', 'red');
+            enemy.setAttribute('enemy', '');
+            enemy.setAttribute('position', `${(Math.random() - 0.5) * 10} ${Math.random() * 2 + 1} -15`);
+            document.querySelector('a-scene').appendChild(enemy);
+        }, 2000);
+    </script>
+</body>
+</html>
