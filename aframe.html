@@ -6,6 +6,30 @@
   <title>VR Shooter</title>
   <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
   <script>
+    // Configurable bullet settings
+    const BULLET_CONFIG = {
+      spawnOffset: {
+        x: 0,    // Offset along x-axis from controller position
+        y: -0.1, // Offset along y-axis (negative to lower from top of hand)
+        z: 0.2   // Offset along z-axis (forward from controller)
+      },
+      directionMultiplier: {
+        x: 1,    // Multiplier for x-direction (1 = full controller direction, 0 = none)
+        y: 1,    // Multiplier for y-direction
+        z: 1     // Multiplier for z-direction
+      },
+      rotationDegrees: {
+        x: -90,    // Rotation around x-axis in degrees
+        y: 0,    // Rotation around y-axis in degrees
+        z: 0    // Rotation around z-axis in degrees (example: 90 degrees)
+      },
+      velocity: {
+        baseSpeed: 10 // Base speed of the bullet
+      },
+      radius: 0.1,    // Bullet size
+      color: 'yellow' // Bullet color
+    };
+
     // Component to shoot bullets from hands
     AFRAME.registerComponent('shoot', {
       init: function () {
@@ -13,22 +37,55 @@
           const hand = this.el;
           const scene = hand.sceneEl;
           const bullet = document.createElement('a-sphere');
-          bullet.setAttribute('radius', '0.1');
-          bullet.setAttribute('color', 'yellow');
+          bullet.setAttribute('radius', BULLET_CONFIG.radius);
+          bullet.setAttribute('color', BULLET_CONFIG.color);
           bullet.setAttribute('class', 'bullet');
+
+          // Get hand's world position and direction
           const handPos = new THREE.Vector3();
           hand.object3D.getWorldPosition(handPos);
           const direction = new THREE.Vector3();
           hand.object3D.getWorldDirection(direction);
-          direction.negate();
-          // Offset bullet to spawn in front of the hand/controller
-          const offset = direction.clone().multiplyScalar(0.5); // Adjust 0.5 as needed
+          direction.negate(); // Forward direction of the controller
+
+          // Adjust spawn position with configurable offset
+          const spawnOffset = new THREE.Vector3(
+            BULLET_CONFIG.spawnOffset.x,
+            BULLET_CONFIG.spawnOffset.y,
+            BULLET_CONFIG.spawnOffset.z
+          ).applyQuaternion(hand.object3D.quaternion); // Apply controller rotation
           bullet.setAttribute('position', {
-            x: handPos.x + offset.x,
-            y: handPos.y + offset.y,
-            z: handPos.z + offset.z
+            x: handPos.x + spawnOffset.x,
+            y: handPos.y + spawnOffset.y,
+            z: handPos.z + spawnOffset.z
           });
-          bullet.setAttribute('velocity', {x: direction.x * 10, y: direction.y * 10, z: direction.z * 10});
+
+          // Apply direction multipliers
+          const adjustedDirection = new THREE.Vector3(
+            direction.x * BULLET_CONFIG.directionMultiplier.x,
+            direction.y * BULLET_CONFIG.directionMultiplier.y,
+            direction.z * BULLET_CONFIG.directionMultiplier.z
+          );
+
+          // Apply rotations in degrees around each axis
+          const quaternion = new THREE.Quaternion();
+          quaternion.setFromEuler(
+            new THREE.Euler(
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.x), // X rotation
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.y), // Y rotation
+              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.z), // Z rotation
+              'XYZ' // Order of rotations
+            )
+          );
+          adjustedDirection.applyQuaternion(quaternion);
+
+          // Set velocity with rotated direction and speed
+          bullet.setAttribute('velocity', {
+            x: adjustedDirection.x * BULLET_CONFIG.velocity.baseSpeed,
+            y: adjustedDirection.y * BULLET_CONFIG.velocity.baseSpeed,
+            z: adjustedDirection.z * BULLET_CONFIG.velocity.baseSpeed
+          });
+
           scene.appendChild(bullet);
         });
       }
@@ -107,8 +164,8 @@
         this.enemies = [];
         this.blueEnemies = [];
         this.barriers = [
-          {min: {x: -4, y: 0, z: -5.25}, max: {x: 0, y: 2, z: -4.75}},
-          {min: {x: 0, y: 0, z: -5.25}, max: {x: 4, y: 2, z: -4.75}}
+          {min: {x: -22, y: 0, z: -8.25}, max: {x: -18, y: 2, z: -7.75}},
+          {min: {x: 0, y: 0, z: -6.25}, max: {x: 4, y: 2, z: -5.75}}
         ];
         this.counter = 0;
         this.counterEl = document.querySelector('#counter');
@@ -175,7 +232,7 @@
       </a-entity>
       <a-entity id="left-hand" hand-controls="hand: left" shoot></a-entity>
       <a-entity id="right-hand" hand-controls="hand: right" shoot>
-        <a-entity gltf-model="url(models/gun.glb)" scale="0.1 0.1 0.1" position="0 0 0"></a-entity>
+        <a-entity gltf-model="url(models/gun.glb)" scale="1 1 1" position="0 0 0"></a-entity>
       </a-entity>
     </a-entity>
 
@@ -189,4 +246,3 @@
   </a-scene>
 </body>
 </html>
-
