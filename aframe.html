@@ -13,16 +13,6 @@
         y: -0.1, // Offset along y-axis (negative to lower from top of hand)
         z: 0.2   // Offset along z-axis (forward from controller)
       },
-      directionMultiplier: {
-        x: 1,    // Multiplier for x-direction (1 = full controller direction, 0 = none)
-        y: 1,    // Multiplier for y-direction
-        z: 1     // Multiplier for z-direction
-      },
-      rotationDegrees: {
-        x: -90,    // Rotation around x-axis in degrees (set to 0 to follow controller)
-        y: 0,    // Rotation around y-axis in degrees
-        z: 0     // Rotation around z-axis in degrees
-      },
       velocity: {
         baseSpeed: 10 // Base speed of the bullet
       },
@@ -30,63 +20,48 @@
       color: 'yellow' // Bullet color
     };
 
-    // Component to shoot bullets from hands
-    AFRAME.registerComponent('shoot', {
+    // Game state
+    let gameActive = true;
+    let timeLeft = 30; // 30-second countdown
+    let hits = 0;
+
+    // Shooting component
+    AFRAME.registerComponent('shoot-controls', {
+      schema: { hand: { type: 'string' } },
       init: function () {
         this.el.addEventListener('triggerdown', () => {
-          const hand = this.el;
-          const scene = hand.sceneEl;
+          if (!gameActive) return; // Disable shooting when game is over
+
+          const pos = new THREE.Vector3();
+          this.el.object3D.getWorldPosition(pos);
+
+          // Apply spawn offset
+          const offset = new THREE.Vector3(
+            BULLET_CONFIG.spawnOffset.x,
+            BULLET_CONFIG.spawnOffset.y,
+            BULLET_CONFIG.spawnOffset.z
+          ).applyQuaternion(this.el.object3D.quaternion);
+          pos.add(offset);
+
+          // Get the controller's world rotation
+          const dir = new THREE.Vector3(0, 1.2, 0); // Default forward vector (-Z in local space)
+          const controllerRotation = new THREE.Quaternion();
+          this.el.object3D.getWorldQuaternion(controllerRotation);
+          
+          // Apply the controller's rotation to the direction
+          dir.applyQuaternion(controllerRotation);
+
           const bullet = document.createElement('a-sphere');
           bullet.setAttribute('radius', BULLET_CONFIG.radius);
           bullet.setAttribute('color', BULLET_CONFIG.color);
           bullet.setAttribute('class', 'bullet');
-
-          // Get hand's world position and direction
-          const handPos = new THREE.Vector3();
-          hand.object3D.getWorldPosition(handPos);
-          const direction = new THREE.Vector3();
-          hand.object3D.getWorldDirection(direction);
-          direction.negate(); // Forward direction of the controller
-
-          // Adjust spawn position with configurable offset
-          const spawnOffset = new THREE.Vector3(
-            BULLET_CONFIG.spawnOffset.x,
-            BULLET_CONFIG.spawnOffset.y,
-            BULLET_CONFIG.spawnOffset.z
-          ).applyQuaternion(hand.object3D.quaternion); // Apply controller rotation
-          bullet.setAttribute('position', {
-            x: handPos.x + spawnOffset.x,
-            y: handPos.y + spawnOffset.y,
-            z: handPos.z + spawnOffset.z
-          });
-
-          // Apply direction multipliers
-          const adjustedDirection = new THREE.Vector3(
-            direction.x * BULLET_CONFIG.directionMultiplier.x,
-            direction.y * BULLET_CONFIG.directionMultiplier.y,
-            direction.z * BULLET_CONFIG.directionMultiplier.z
-          );
-
-          // Apply rotations in degrees around each axis (if any)
-          const quaternion = new THREE.Quaternion();
-          quaternion.setFromEuler(
-            new THREE.Euler(
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.x),
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.y),
-              THREE.MathUtils.degToRad(BULLET_CONFIG.rotationDegrees.z),
-              'XYZ'
-            )
-          );
-          adjustedDirection.applyQuaternion(quaternion);
-
-          // Set velocity with adjusted direction and speed
+          bullet.setAttribute('position', pos);
           bullet.setAttribute('velocity', {
-            x: adjustedDirection.x * BULLET_CONFIG.velocity.baseSpeed,
-            y: adjustedDirection.y * BULLET_CONFIG.velocity.baseSpeed,
-            z: adjustedDirection.z * BULLET_CONFIG.velocity.baseSpeed
+            x: dir.x * BULLET_CONFIG.velocity.baseSpeed,
+            y: dir.y * BULLET_CONFIG.velocity.baseSpeed,
+            z: dir.z * BULLET_CONFIG.velocity.baseSpeed
           });
-
-          scene.appendChild(bullet);
+          this.el.sceneEl.appendChild(bullet);
         });
       }
     });
@@ -99,6 +74,7 @@
         z: {type: 'number', default: 0}
       },
       tick: function (time, timeDelta) {
+        if (!gameActive) return;
         const deltaSeconds = timeDelta / 1000;
         const position = this.el.getAttribute('position');
         position.x += this.data.x * deltaSeconds;
@@ -115,6 +91,7 @@
     AFRAME.registerComponent('move-towards-player', {
       schema: {speed: {type: 'number', default: 5}},
       tick: function (time, timeDelta) {
+        if (!gameActive) return;
         const player = document.querySelector('#camera');
         const playerPos = player.getAttribute('position');
         const enemyPos = this.el.getAttribute('position');
@@ -133,6 +110,7 @@
         range: {type: 'number', default: 2}
       },
       tick: function (time) {
+        if (!gameActive) return;
         const x = this.data.centerX + this.data.range * Math.sin(time / 1000);
         const pos = this.el.getAttribute('position');
         this.el.setAttribute('position', {x: x, y: pos.y, z: pos.z});
@@ -142,7 +120,8 @@
     // Component to spawn red enemies
     AFRAME.registerComponent('spawn-enemies', {
       init: function () {
-        setInterval(() => {
+        this.spawnInterval = setInterval(() => {
+          if (!gameActive) return;
           const enemy = document.createElement('a-box');
           enemy.setAttribute('width', '1');
           enemy.setAttribute('height', '1');
@@ -154,10 +133,13 @@
           enemy.setAttribute('move-towards-player', '');
           this.el.appendChild(enemy);
         }, 2000);
+      },
+      remove: function () {
+        clearInterval(this.spawnInterval); // Cleanup interval on component removal
       }
     });
 
-    // Component to detect collisions
+    // Component to detect collisions and manage game state
     AFRAME.registerComponent('collision-detector', {
       init: function () {
         this.bullets = [];
@@ -169,8 +151,25 @@
         ];
         this.counter = 0;
         this.counterEl = document.querySelector('#counter');
+        this.timerEl = document.querySelector('#timer');
+        this.gameOverEl = document.querySelector('#game-over');
+        this.finalScoreEl = document.querySelector('#final-score');
+        this.restartBtn = document.querySelector('#restart-btn');
+
+        // Start countdown
+        this.updateTimer();
+        this.timerInterval = setInterval(() => {
+          if (gameActive) {
+            timeLeft--;
+            this.updateTimer();
+            if (timeLeft <= 0) {
+              this.endGame();
+            }
+          }
+        }, 1000);
       },
       tick: function () {
+        if (!gameActive) return;
         this.bullets = document.querySelectorAll('.bullet');
         this.enemies = document.querySelectorAll('.enemy');
         this.blueEnemies = document.querySelectorAll('.blue-enemy');
@@ -197,6 +196,7 @@
               enemy.parentNode.removeChild(enemy);
               bullet.parentNode.removeChild(bullet);
               this.counter++;
+              hits++;
               this.counterEl.setAttribute('value', `Enemies Hit: ${this.counter}`);
             }
           });
@@ -212,12 +212,43 @@
               blueEnemy.parentNode.removeChild(blueEnemy);
               bullet.parentNode.removeChild(bullet);
               this.counter++;
+              hits++;
               this.counterEl.setAttribute('value', `Enemies Hit: ${this.counter}`);
             }
           });
         });
+      },
+      updateTimer: function () {
+        this.timerEl.setAttribute('value', `Time: ${timeLeft}s`);
+      },
+      endGame: function () {
+        gameActive = false;
+        this.finalScoreEl.setAttribute('value', `Final Score: ${hits}`);
+        this.gameOverEl.setAttribute('visible', true);
+        // Cleanup remaining entities
+        document.querySelectorAll('.bullet, .enemy, .blue-enemy').forEach(el => el.parentNode.removeChild(el));
+      },
+      remove: function () {
+        clearInterval(this.timerInterval); // Cleanup timer on component removal
       }
     });
+
+    // Restart game function
+    function restartGame() {
+      gameActive = true;
+      timeLeft = 30;
+      hits = 0;
+      const scene = document.querySelector('a-scene');
+      const gameOverEl = document.querySelector('#game-over');
+      gameOverEl.setAttribute('visible', false);
+      document.querySelector('#counter').setAttribute('value', 'Enemies Hit: 0');
+      document.querySelector('#timer').setAttribute('value', 'Time: 30s');
+      // Restart components
+      scene.removeAttribute('spawn-enemies');
+      scene.removeAttribute('collision-detector');
+      scene.setAttribute('spawn-enemies', '');
+      scene.setAttribute('collision-detector', '');
+    }
   </script>
 </head>
 <body>
@@ -225,13 +256,21 @@
     <!-- Large room floor -->
     <a-plane position="0 0 0" rotation="-90 0 0" width="100" height="100" color="#7BC8A4"></a-plane>
 
-    <!-- Player rig with camera, hands, and counter -->
+    <!-- Player rig with camera, hands, and HUD -->
     <a-entity id="rig">
       <a-entity id="camera" camera position="0 1.6 0" look-controls>
         <a-text id="counter" value="Enemies Hit: 0" position="0 0.5 -1" align="center" color="red"></a-text>
+        <a-text id="timer" value="Time: 30s" position="0 0.6 -1" align="center" color="red"></a-text>
+        <a-entity id="game-over" visible="false" position="0 0 -1">
+          <a-text id="final-score" value="Final Score: 0" position="0 0.2 0" align="center" color="white" width="2"></a-text>
+          <a-text id="game-over-text" value="Game Over" position="0 0.4 0" align="center" color="white" width="2"></a-text>
+          <a-plane id="restart-btn" position="0 0 0" width="0.5" height="0.2" color="green" material="opacity: 0.8">
+            <a-text value="Restart" position="0 0 0.01" align="center" color="white" width="1"></a-text>
+          </a-plane>
+        </a-entity>
       </a-entity>
-      <a-entity id="left-hand" hand-controls="hand: left" shoot></a-entity>
-      <a-entity id="right-hand" hand-controls="hand: right" shoot>
+      <a-entity id="left-hand" hand-controls="hand: left" shoot-controls="hand: left"></a-entity>
+      <a-entity id="right-hand" hand-controls="hand: right" shoot-controls="hand: right">
         <a-entity gltf-model="url(models/gun.glb)" scale="1 1 1" position="0 0 0"></a-entity>
       </a-entity>
     </a-entity>
@@ -241,8 +280,4 @@
     <a-box id="barrier2" position="2 1 -6" width="4" height="2" depth="0.5" color="brown"></a-box>
 
     <!-- Blue enemies -->
-    <a-box id="blue-enemy1" class="blue-enemy" position="-21 0.5 -9" width="1" height="1" depth="1" color="blue" move-sideways="centerX: -3; range: 2"></a-box>
-    <a-box id="blue-enemy2" class="blue-enemy" position="3 0.5 -7" width="1" height="1" depth="1" color="blue" move-sideways="centerX: 3; range: 2"></a-box>
-  </a-scene>
-</body>
-</html>
+    <a-box id="blue-enemy1" class="blue-en
