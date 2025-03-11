@@ -50,25 +50,29 @@
 
         // Shooting component
         AFRAME.registerComponent('shoot-controls', {
-            schema: { hand: {type: 'string'} },
-            init: function() {
-                this.el.addEventListener('triggerdown', () => {
-                    const pos = this.el.getAttribute('position');
-                    const dir = this.el.object3D.getWorldDirection(new THREE.Vector3());
-					
-		            // Apply -90 degrees (or -Math.PI/2 radians) rotation on the X-axis
-					const rotationMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-					dir.applyMatrix4(rotationMatrix);
+			schema: { hand: { type: 'string' } },
+			init: function() {
+				this.el.addEventListener('triggerdown', () => {
+					const pos = new THREE.Vector3();
+					this.el.object3D.getWorldPosition(pos);
 
-                    const bullet = document.createElement('a-sphere');
-                    bullet.setAttribute('radius', '0.05');
-                    bullet.setAttribute('color', 'yellow');
-                    bullet.setAttribute('position', pos);
-                    bullet.setAttribute('bullet', {direction: dir});
-                    this.el.sceneEl.appendChild(bullet);
-                });
-            }
-        });
+					// Get the controller's world rotation
+					const dir = new THREE.Vector3(0, 0, -1); // Default forward vector (-Z)
+					const controllerRotation = new THREE.Quaternion();
+					this.el.object3D.getWorldQuaternion(controllerRotation);
+					
+					// Apply the controller's rotation to the direction
+					dir.applyQuaternion(controllerRotation);
+
+					const bullet = document.createElement('a-sphere');
+					bullet.setAttribute('radius', '0.05');
+					bullet.setAttribute('color', 'yellow');
+					bullet.setAttribute('position', pos);
+					bullet.setAttribute('bullet', { direction: dir });
+					this.el.sceneEl.appendChild(bullet);
+				});
+			}
+		});
 
         // Bullet component
         AFRAME.registerComponent('bullet', {
