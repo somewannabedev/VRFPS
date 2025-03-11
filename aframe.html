@@ -1,56 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VR Shooter</title>
-  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  <script>
-    // Configurable bullet settings
-    const BULLET_CONFIG = {
-      spawnOffset: {
-        x: 0,    // Offset along x-axis from controller position
-        y: -0.1, // Offset along y-axis (negative to lower from top of hand)
-        z: 0.2   // Offset along z-axis (forward from controller)
-      },
-      velocity: {
-        baseSpeed: 10 // Base speed of the bullet
-      },
-      radius: 0.1,    // Bullet size
-      color: 'yellow' // Bullet color
-    };
+  <meta charset="utf-8">
+  <title>VR Shooter Game</title>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+</head>
+<body>
+  <a-scene collision-detector enemy-spawner>
+    <!-- Scene Geometry from JSON -->
+    <!-- Large Box (Room) -->
+    <a-box position="0 0 0" width="30" height="30" depth="30" material="color: white; side: double"></a-box>
+    <!-- Smaller Boxes -->
+    <a-box position="-11.34 0 -7.19" width="5" height="0.5" depth="1" color="white"></a-box>
+    <a-box position="-2.66 0 -2.98" width="5" height="0.5" depth="1" color="white"></a-box>
+    <!-- Larger Box -->
+    <a-box position="14.72 1.8 -10.96" width="8.7" height="4.34" depth="10.08" color="white"></a-box>
+    <!-- Lighting -->
+    <a-light type="directional" position="4.12 8.88 -10.65" intensity="1"></a-light>
+    <a-light type="ambient" intensity="0.5"></a-light>
 
-    // Game state
+    <!-- Player Rig (Spawn at Capsule Position) -->
+    <a-entity id="rig" position="0 0 18.06">
+      <a-entity id="camera" camera position="0 1.6 0" look-controls></a-entity>
+      <!-- Left Hand -->
+      <a-entity id="left-hand" hand-controls="hand: left" shoot-controls="hand: left"></a-entity>
+      <!-- Right Hand with Gun Model (Adjust as Needed) -->
+      <a-entity id="right-hand" hand-controls="hand: right" shoot-controls="hand: right">
+        <a-entity gltf-model="url(models/gun.glb)" scale="1 1 1" position="0 0 0" rotation="20 270 0" animation-mixer></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <!-- UI Elements -->
+    <a-entity id="ui" position="0 0 18.06"> <!-- Positioned at player spawn -->
+      <a-text id="counter" value="Enemies Hit: 0" position="0 0.5 -1" align="center" color="red"></a-text>
+      <a-text id="timer" value="Time: 30s" position="0 0.4 -1" align="center" color="red"></a-text>
+      <a-entity id="game-over" visible="false" position="0 0 -1">
+        <a-text id="final-score" value="Final Score: 0" position="0 0.2 0" align="center" color="white" width="2"></a-text>
+        <a-plane id="restart-btn" class="clickable" position="0 0 0" width="0.5" height="0.2" color="green" material="opacity: 0.8">
+          <a-text value="Restart" position="0 0 0.01" align="center" color="white" width="1"></a-text>
+        </a-plane>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    // Global Variables
     let gameActive = true;
-    let timeLeft = 30; // 30-second countdown
     let hits = 0;
 
-    // Shooting component
+    // Constants
+    const BULLET_CONFIG = {
+      radius: 0.05,
+      color: 'yellow',
+      velocity: { baseSpeed: 10 }
+    };
+
+    // Shoot Controls Component
     AFRAME.registerComponent('shoot-controls', {
       schema: { hand: { type: 'string' } },
       init: function () {
         this.el.addEventListener('triggerdown', () => {
-          if (!gameActive) return; // Disable shooting when game is over
-
+          if (!gameActive) return;
           const pos = new THREE.Vector3();
+		  const gun = this.el.querySelector('#right-hand');
+		  if (gun){
+			const mixer = gun.components['animation-mixer'];
+            if (mixer) {
+                mixer.mixer.stopAllAction(); // Stop any previous animation
+                mixer.mixer.clipAction('Animation_Gatting_Shell').play(); // Play "shoot" animation
+			}
+		  }
           this.el.object3D.getWorldPosition(pos);
-
-          // Apply spawn offset
-          const offset = new THREE.Vector3(
-            BULLET_CONFIG.spawnOffset.x,
-            BULLET_CONFIG.spawnOffset.y,
-            BULLET_CONFIG.spawnOffset.z
-          ).applyQuaternion(this.el.object3D.quaternion);
-          pos.add(offset);
-
-          // Get the controller's world rotation
-          const dir = new THREE.Vector3(0, -0.9, 0); // Default forward vector (-Z in local space)
+          const dir = new THREE.Vector3(0, -0.8, 0); // Forward vector
           const controllerRotation = new THREE.Quaternion();
           this.el.object3D.getWorldQuaternion(controllerRotation);
-          
-          // Apply the controller's rotation to the direction
           dir.applyQuaternion(controllerRotation);
-
           const bullet = document.createElement('a-sphere');
           bullet.setAttribute('radius', BULLET_CONFIG.radius);
           bullet.setAttribute('color', BULLET_CONFIG.color);
@@ -66,103 +90,106 @@
       }
     });
 
-    // Component to move entities based on velocity
+    // Velocity Component (for Bullets)
     AFRAME.registerComponent('velocity', {
       schema: {
-        x: {type: 'number', default: 0},
-        y: {type: 'number', default: 0},
-        z: {type: 'number', default: 0}
+        x: { type: 'number', default: 0 },
+        y: { type: 'number', default: 0 },
+        z: { type: 'number', default: 0 }
       },
-      tick: function (time, timeDelta) {
-        if (!gameActive) return;
-        const deltaSeconds = timeDelta / 1000;
-        const position = this.el.getAttribute('position');
-        position.x += this.data.x * deltaSeconds;
-        position.y += this.data.y * deltaSeconds;
-        position.z += this.data.z * deltaSeconds;
-        this.el.setAttribute('position', position);
-        if (Math.abs(position.x) > 50 || Math.abs(position.z) > 50) {
+      tick: function (time, delta) {
+        const dt = delta / 1000; // Convert to seconds
+        const pos = this.el.getAttribute('position');
+        pos.x += this.data.x * dt;
+        pos.y += this.data.y * dt;
+        pos.z += this.data.z * dt;
+        this.el.setAttribute('position', pos);
+        // Remove bullet if out of bounds
+        if (Math.abs(pos.x) > 15 || Math.abs(pos.y) > 15 || Math.abs(pos.z) > 30) {
           this.el.parentNode.removeChild(this.el);
         }
       }
     });
 
-    // Component to move enemies towards the player
-    AFRAME.registerComponent('move-towards-player', {
-      schema: {speed: {type: 'number', default: 5}},
-      tick: function (time, timeDelta) {
-        if (!gameActive) return;
-        const player = document.querySelector('#camera');
-        const playerPos = player.getAttribute('position');
-        const enemyPos = this.el.getAttribute('position');
-        const direction = new THREE.Vector3(playerPos.x - enemyPos.x, 0, playerPos.z - enemyPos.z).normalize();
-        const deltaSeconds = timeDelta / 1000;
-        enemyPos.x += direction.x * this.data.speed * deltaSeconds;
-        enemyPos.z += direction.z * this.data.speed * deltaSeconds;
-        this.el.setAttribute('position', enemyPos);
-      }
-    });
-
-    // Component to move blue enemies side to side
+    // Move Sideways Component (for Enemies)
     AFRAME.registerComponent('move-sideways', {
       schema: {
-        centerX: {type: 'number', default: 0},
-        range: {type: 'number', default: 2}
+        centerX: { type: 'number', default: 0 },
+        range: { type: 'number', default: 1 },
+        speed: { type: 'number', default: 2 }
       },
-      tick: function (time) {
-        if (!gameActive) return;
-        const x = this.data.centerX + this.data.range * Math.sin(time / 1000);
-        const pos = this.el.getAttribute('position');
-        this.el.setAttribute('position', {x: x, y: pos.y, z: pos.z});
-      }
-    });
-
-    // Component to spawn red enemies
-    AFRAME.registerComponent('spawn-enemies', {
       init: function () {
-        this.spawnInterval = setInterval(() => {
-          if (!gameActive) return;
-          const enemy = document.createElement('a-box');
-          enemy.setAttribute('width', '1');
-          enemy.setAttribute('height', '1');
-          enemy.setAttribute('depth', '1');
-          enemy.setAttribute('color', 'red');
-          enemy.setAttribute('class', 'enemy');
-          const x = (Math.random() - 0.5) * 80;
-          enemy.setAttribute('position', {x: x, y: 0.5, z: -40});
-          enemy.setAttribute('move-towards-player', '');
-          this.el.appendChild(enemy);
-        }, 2000);
+        this.direction = 1;
       },
-      remove: function () {
-        clearInterval(this.spawnInterval); // Cleanup interval on component removal
+      tick: function (time, delta) {
+        if (!gameActive) return;
+        const pos = this.el.getAttribute('position');
+        const dx = this.data.speed * (delta / 1000) * this.direction;
+        pos.x += dx;
+        if (pos.x > this.data.centerX + this.data.range || pos.x < this.data.centerX - this.data.range) {
+          this.direction *= -1;
+          pos.x = Math.max(this.data.centerX - this.data.range, Math.min(this.data.centerX + this.data.range, pos.x));
+        }
+        this.el.setAttribute('position', pos);
       }
     });
 
-    // Component to detect collisions and manage game state
+    // Enemy Spawner Component
+    const spawnConfigs = [
+      { spawnPos: { y: 0.5, z: -8.19 }, moveCenterX: -11.34, moveRange: 2.5, enemyCount: 2 }, // Behind smaller box 1
+      { spawnPos: { y: 0.5, z: -3.98 }, moveCenterX: -2.66, moveRange: 2.5, enemyCount: 2 }, // Behind smaller box 2
+      { spawnPos: { y: 4.47, z: -10.96 }, moveCenterX: 14.72, moveRange: 4.35, enemyCount: 2 } // On top of larger box
+    ];
+
+    AFRAME.registerComponent('enemy-spawner', {
+      init: function () {
+        this.enemies = [];
+        this.initEnemies();
+      },
+      initEnemies: function () {
+        spawnConfigs.forEach(config => {
+          for (let i = 0; i < config.enemyCount; i++) {
+            this.spawnEnemy(config);
+          }
+        });
+      },
+      spawnEnemy: function (config) {
+        const enemy = document.createElement('a-box');
+        enemy.setAttribute('width', '1');
+        enemy.setAttribute('height', '1');
+        enemy.setAttribute('depth', '1');
+        enemy.setAttribute('color', 'red');
+        enemy.setAttribute('class', 'enemy');
+        enemy.setAttribute('position', { x: config.moveCenterX, y: config.spawnPos.y, z: config.spawnPos.z });
+        enemy.setAttribute('move-sideways', { centerX: config.moveCenterX, range: config.moveRange });
+        this.el.sceneEl.appendChild(enemy);
+        this.enemies.push(enemy);
+      },
+      scheduleRespawn: function (deadEnemy) {
+        const config = spawnConfigs.find(cfg => Math.abs(deadEnemy.getAttribute('position').z - cfg.spawnPos.z) < 0.1);
+        if (config) {
+          setTimeout(() => {
+            if (gameActive) this.spawnEnemy(config);
+          }, 1000); // Respawn after 1 second
+        }
+      }
+    });
+
+    // Collision Detector Component
     AFRAME.registerComponent('collision-detector', {
       init: function () {
-        this.bullets = [];
-        this.enemies = [];
-        this.blueEnemies = [];
-        this.barriers = [
-          {min: {x: -22, y: 0, z: -8.25}, max: {x: -18, y: 2, z: -7.75}},
-          {min: {x: 0, y: 0, z: -6.25}, max: {x: 4, y: 2, z: -5.75}}
-        ];
         this.counter = 0;
         this.counterEl = document.querySelector('#counter');
+        this.timer = 30;
         this.timerEl = document.querySelector('#timer');
         this.gameOverEl = document.querySelector('#game-over');
         this.finalScoreEl = document.querySelector('#final-score');
         this.restartBtn = document.querySelector('#restart-btn');
-
-        // Start countdown
-        this.updateTimer();
         this.timerInterval = setInterval(() => {
           if (gameActive) {
-            timeLeft--;
-            this.updateTimer();
-            if (timeLeft <= 0) {
+            this.timer--;
+            this.timerEl.setAttribute('value', `Time: ${this.timer}s`);
+            if (this.timer <= 0) {
               this.endGame();
             }
           }
@@ -170,46 +197,22 @@
       },
       tick: function () {
         if (!gameActive) return;
-        this.bullets = document.querySelectorAll('.bullet');
-        this.enemies = document.querySelectorAll('.enemy');
-        this.blueEnemies = document.querySelectorAll('.blue-enemy');
-        this.bullets.forEach(bullet => {
+        const bullets = document.querySelectorAll('.bullet');
+        const enemies = document.querySelectorAll('.enemy');
+        bullets.forEach(bullet => {
           const bulletPos = bullet.getAttribute('position');
-          this.barriers.forEach(barrier => {
-            if (
-              bulletPos.x >= barrier.min.x && bulletPos.x <= barrier.max.x &&
-              bulletPos.y >= barrier.min.y && bulletPos.y <= barrier.max.y &&
-              bulletPos.z >= barrier.min.z && bulletPos.z <= barrier.max.z
-            ) {
-              bullet.parentNode.removeChild(bullet);
-            }
-          });
-          this.enemies.forEach(enemy => {
+          enemies.forEach(enemy => {
             const enemyPos = enemy.getAttribute('position');
-            const min = {x: enemyPos.x - 0.5, y: enemyPos.y - 0.5, z: enemyPos.z - 0.5};
-            const max = {x: enemyPos.x + 0.5, y: enemyPos.y + 0.5, z: enemyPos.z + 0.5};
+            const min = { x: enemyPos.x - 0.5, y: enemyPos.y - 0.5, z: enemyPos.z - 0.5 };
+            const max = { x: enemyPos.x + 0.5, y: enemyPos.y + 0.5, z: enemyPos.z + 0.5 };
             if (
               bulletPos.x >= min.x && bulletPos.x <= max.x &&
               bulletPos.y >= min.y && bulletPos.y <= max.y &&
               bulletPos.z >= min.z && bulletPos.z <= max.z
             ) {
+              const spawner = document.querySelector('[enemy-spawner]');
+              spawner.components['enemy-spawner'].scheduleRespawn(enemy);
               enemy.parentNode.removeChild(enemy);
-              bullet.parentNode.removeChild(bullet);
-              this.counter++;
-              hits++;
-              this.counterEl.setAttribute('value', `Enemies Hit: ${this.counter}`);
-            }
-          });
-          this.blueEnemies.forEach(blueEnemy => {
-            const blueEnemyPos = blueEnemy.getAttribute('position');
-            const min = {x: blueEnemyPos.x - 0.5, y: blueEnemyPos.y - 0.5, z: blueEnemyPos.z - 0.5};
-            const max = {x: blueEnemyPos.x + 0.5, y: blueEnemyPos.y + 0.5, z: blueEnemyPos.z + 0.5};
-            if (
-              bulletPos.x >= min.x && bulletPos.x <= max.x &&
-              bulletPos.y >= min.y && bulletPos.y <= max.y &&
-              bulletPos.z >= min.z && bulletPos.z <= max.z
-            ) {
-              blueEnemy.parentNode.removeChild(blueEnemy);
               bullet.parentNode.removeChild(bullet);
               this.counter++;
               hits++;
@@ -218,66 +221,56 @@
           });
         });
       },
-      updateTimer: function () {
-        this.timerEl.setAttribute('value', `Time: ${timeLeft}s`);
-      },
       endGame: function () {
         gameActive = false;
         this.finalScoreEl.setAttribute('value', `Final Score: ${hits}`);
         this.gameOverEl.setAttribute('visible', true);
-        // Cleanup remaining entities
-        document.querySelectorAll('.bullet, .enemy, .blue-enemy').forEach(el => el.parentNode.removeChild(el));
+        // Stop enemy movement
+        document.querySelectorAll('.enemy').forEach(enemy => {
+          enemy.removeAttribute('move-sideways');
+        });
+        // Cleanup bullets
+        document.querySelectorAll('.bullet').forEach(bullet => bullet.parentNode.removeChild(bullet));
+        // Switch controllers to selection mode
+        const hands = [document.querySelector('#left-hand'), document.querySelector('#right-hand')];
+        hands.forEach(hand => {
+          hand.removeAttribute('shoot-controls');
+          hand.setAttribute('raycaster', 'objects: .clickable; far: 10');
+          hand.setAttribute('line', 'color: red; opacity: 0.5'); // Visual laser
+        });
       },
       remove: function () {
-        clearInterval(this.timerInterval); // Cleanup timer on component removal
+        clearInterval(this.timerInterval);
       }
     });
 
-    // Restart game function
-    function restartGame() {
+    // Restart Game Function
+    document.querySelector('#restart-btn').addEventListener('click', function () {
       gameActive = true;
-      timeLeft = 30;
       hits = 0;
       const scene = document.querySelector('a-scene');
       const gameOverEl = document.querySelector('#game-over');
       gameOverEl.setAttribute('visible', false);
       document.querySelector('#counter').setAttribute('value', 'Enemies Hit: 0');
       document.querySelector('#timer').setAttribute('value', 'Time: 30s');
-      // Restart components
-      scene.removeAttribute('spawn-enemies');
-      scene.removeAttribute('collision-detector');
-      scene.setAttribute('spawn-enemies', '');
-      scene.setAttribute('collision-detector', '');
-    }
+      // Reset timer in collision-detector
+      const detector = scene.components['collision-detector'];
+      detector.timer = 30;
+      // Remove all enemies and bullets
+      document.querySelectorAll('.enemy, .bullet').forEach(el => el.parentNode.removeChild(el));
+      // Restart enemy spawner
+      scene.components['enemy-spawner'].initEnemies();
+      // Restore shooting controls
+      const hands = [
+        { el: document.querySelector('#left-hand'), hand: 'left' },
+        { el: document.querySelector('#right-hand'), hand: 'right' }
+      ];
+      hands.forEach(({ el, hand }) => {
+        el.removeAttribute('raycaster');
+        el.removeAttribute('line');
+        el.setAttribute('shoot-controls', `hand: ${hand}`);
+      });
+    });
   </script>
-</head>
-<body>
-  <a-scene spawn-enemies collision-detector>
-    <!-- Large room floor -->
-    <a-plane position="0 0 0" rotation="-90 0 0" width="100" height="100" color="#7BC8A4"></a-plane>
-
-    <!-- Player rig with camera, hands, and HUD -->
-    <a-entity id="rig">
-      <a-entity id="camera" camera position="0 1.6 0" look-controls>
-        <a-text id="counter" value="Enemies Hit: 0" position="0 0.5 -1" align="center" color="red"></a-text>
-        <a-text id="timer" value="Time: 30s" position="0 0.6 -1" align="center" color="red"></a-text>
-        <a-entity id="game-over" visible="false" position="0 0 -1">
-          <a-text id="final-score" value="Final Score: 0" position="0 0.2 0" align="center" color="white" width="2"></a-text>
-          <a-text id="game-over-text" value="Game Over" position="0 0.4 0" align="center" color="white" width="2"></a-text>
-          <a-plane id="restart-btn" position="0 0 0" width="0.5" height="0.2" color="green" material="opacity: 0.8">
-            <a-text value="Restart" position="0 0 0.01" align="center" color="white" width="1"></a-text>
-          </a-plane>
-        </a-entity>
-      </a-entity>
-      <a-entity id="left-hand" hand-controls="hand: left" shoot-controls="hand: left"></a-entity>
-      <a-entity id="right-hand" hand-controls="hand: right" shoot-controls="hand: right">
-        <a-entity gltf-model="url(models/gun.glb)" scale="1 1 1" position="0 0 0"></a-entity>
-      </a-entity>
-    </a-entity>
-
-    <!-- Barriers -->
-    <a-box id="barrier1" position="-20 1 -8" width="4" height="2" depth="0.5" color="brown"></a-box>
-    <a-box id="barrier2" position="2 1 -6" width="4" height="2" depth="0.5" color="brown"></a-box>
-
-    <!-- Blue enemies -->
-    <a-box id="blue-enemy1" class="blue-en
+</body>
+</html>
